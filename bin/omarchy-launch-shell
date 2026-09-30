@@ -98,6 +98,8 @@ while true; do
 
   # Relaunching into a session already tearing down burns the attempt budget.
   if ! compositor_alive; then
+    # The wait gives up early on a signal, and that is not the compositor's doing.
+    (( terminating )) && exit 0
     logger -t omarchy-shell "Omarchy shell exited with status $status; the compositor stopped answering, so supervision ends here."
     exit 0
   fi

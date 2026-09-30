@@ -163,14 +163,58 @@ if (( socket_bound )); then
   launch_shell $'255\n0' 0 12 "$signature" || fail "a shell survives a compositor that is slow to resume"
   [[ $(launches) == 2 ]] || fail "a slow resume does not end supervision" "$(<"$qs_log")"
   pass "a compositor slow to answer after resume is not mistaken for one that is gone"
+else
+  skip "cannot bind a Unix socket here; skipping the slow resume case"
 fi
 
 # Without a socket there is nothing to wait for, and the short budget decides.
 rm -f "$hyprctl_misses"
-launch_shell $'255\n0' 0 12 || fail "a shell outliving the compositor exits cleanly"
+launch_shell $'255\n0' 0 12 "no-socket-instance" || fail "a shell outliving the compositor exits cleanly"
 [[ $(launches) == 1 ]] || fail "a compositor that left no socket ends supervision" "$(<"$qs_log")"
 grep -F 'stopped answering' "$logger_log" >/dev/null || fail "standing down is recorded in the journal"
 pass "a compositor that left no socket is not waited on"
+
+# A session teardown during the socket wait ends supervision at once, and the
+# journal does not blame the compositor for it.
+if (( socket_bound )); then
+  : >"$qs_log"
+  : >"$qs_env_log"
+  : >"$logger_log"
+  rm -f "$hyprctl_misses"
+
+  PATH="$fake_bin:$PATH" \
+  OMARCHY_PATH="$shell_root" \
+  OMARCHY_TEST_QS_LOG="$qs_log" \
+  OMARCHY_TEST_QS_ENV_LOG="$qs_env_log" \
+  OMARCHY_TEST_QS_STATUSES=$'255\n0' \
+  OMARCHY_TEST_COMPOSITOR_GONE=0 \
+  OMARCHY_TEST_LOGGER_LOG="$logger_log" \
+  OMARCHY_TEST_QS_TERMINATED="$qs_terminated" \
+  OMARCHY_TEST_HYPRCTL_MISSES=1000 \
+  OMARCHY_TEST_HYPRCTL_MISS_COUNT="$hyprctl_misses" \
+  XDG_RUNTIME_DIR="$runtime_dir" \
+  HYPRLAND_INSTANCE_SIGNATURE="$signature" \
+    "$ROOT/bin/omarchy-launch-shell" &
+  launch_pid=$!
+
+  # Past the three quick queries and inside the wait.
+  for (( waited = 0; waited < 200; waited++ )); do
+    (( $(cat "$hyprctl_misses" 2>/dev/null || printf '0') >= 5 )) && break
+    sleep 0.05
+  done
+
+  signalled=$SECONDS
+  kill -TERM "$launch_pid"
+  wait "$launch_pid" || fail "a supervisor signalled during the wait exits cleanly"
+  launch_pid=""
+  (( SECONDS - signalled <= 2 )) || fail "a teardown during the wait ends supervision promptly" "took $(( SECONDS - signalled ))s"
+  [[ $(launches) == 1 ]] || fail "a supervisor signalled during the wait does not relaunch" "$(<"$qs_log")"
+  grep -F 'stopped answering' "$logger_log" >/dev/null &&
+    fail "a teardown during the wait is not logged as a compositor that stopped answering" "$(<"$logger_log")"
+  pass "a teardown during the wait ends supervision without blaming the compositor"
+else
+  skip "cannot bind a Unix socket here; skipping the teardown during the wait case"
+fi
 
 # A signal mid-backoff only reaches the trap once the sleep is over.
 : >"$qs_log"
