@@ -66,6 +66,10 @@ if (( ${OMARCHY_TEST_HYPRCTL_MISSES:-0} > 0 )); then
   fi
 fi
 
+if (( ${OMARCHY_TEST_HYPRCTL_SIGNAL_ON_SUCCESS:-0} )); then
+  kill -TERM "$PPID"
+fi
+
 printf '[]\n'
 SH
 
@@ -112,10 +116,11 @@ launch_shell() {
   OMARCHY_TEST_LOGGER_LOG="$logger_log" \
   OMARCHY_TEST_QS_TERMINATED="$qs_terminated" \
   OMARCHY_TEST_HYPRCTL_MISSES="${3:-0}" \
+  OMARCHY_TEST_HYPRCTL_SIGNAL_ON_SUCCESS="${5:-0}" \
   OMARCHY_TEST_HYPRCTL_MISS_COUNT="$hyprctl_misses" \
   XDG_RUNTIME_DIR="$runtime_dir" \
   HYPRLAND_INSTANCE_SIGNATURE="${4:-}" \
-    timeout 30 "$ROOT/bin/omarchy-launch-shell"
+    timeout 45 "$ROOT/bin/omarchy-launch-shell"
 }
 
 launches() {
@@ -160,9 +165,15 @@ pass "a compositor too busy to answer is not mistaken for one that is gone"
 # compositor cannot answer, so supervision has to outlast the blackout.
 if (( socket_bound )); then
   rm -f "$hyprctl_misses"
-  launch_shell $'255\n0' 0 12 "$signature" || fail "a shell survives a compositor that is slow to resume"
+  launch_shell $'255\n0' 0 62 "$signature" || fail "a shell survives a compositor that is slow to resume"
   [[ $(launches) == 2 ]] || fail "a slow resume does not end supervision" "$(<"$qs_log")"
   pass "a compositor slow to answer after resume is not mistaken for one that is gone"
+
+  rm -f "$hyprctl_misses"
+  launch_shell $'255\n0' 0 3 "$signature" 1 || fail "a teardown when the compositor answers exits cleanly"
+  [[ $(launches) == 1 ]] || fail "a teardown when the compositor answers does not relaunch" "$(<"$qs_log")"
+  [[ ! -s $logger_log ]] || fail "a teardown when the compositor answers is not logged as a relaunch" "$(<"$logger_log")"
+  pass "a teardown when the compositor answers ends supervision without a relaunch"
 else
   skip "cannot bind a Unix socket here; skipping the slow resume case"
 fi

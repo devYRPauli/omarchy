@@ -104,6 +104,8 @@ while true; do
     exit 0
   fi
 
+  (( terminating )) && exit 0
+
   if (( SECONDS - window_started > 60 )); then
     attempts=0
     window_started=$SECONDS
