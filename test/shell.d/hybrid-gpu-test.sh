@@ -115,8 +115,9 @@ cat >"$fake_bin/sudo" <<'STUB'
 printf '%s\n' "$*" >>"$TEST_TMP/sudo-calls"
 STUB
 
-cat >"$fake_bin/omarchy-system-reboot" <<'STUB'
+cat >"$fake_bin/omarchy-system" <<'STUB'
 #!/bin/bash
+[[ $1 == "reboot" ]] || exit 2
 printf 'rebooted\n' >"$TEST_TMP/rebooted"
 STUB
 
