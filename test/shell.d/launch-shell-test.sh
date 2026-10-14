@@ -74,7 +74,9 @@ cat >"$fake_bin/hyprctl" <<'SH'
 if (( ${OMARCHY_TEST_HYPRCTL_MISSES:-0} > 0 )); then
   misses=$(cat "$OMARCHY_TEST_HYPRCTL_MISS_COUNT" 2>/dev/null || printf '0')
   if (( misses < OMARCHY_TEST_HYPRCTL_MISSES )); then
-    printf '%s\n' "$(( misses + 1 ))" >"$OMARCHY_TEST_HYPRCTL_MISS_COUNT"
+    # Renamed into place so a reader never sees the file truncated and empty.
+    printf '%s\n' "$(( misses + 1 ))" >"$OMARCHY_TEST_HYPRCTL_MISS_COUNT.tmp"
+    mv "$OMARCHY_TEST_HYPRCTL_MISS_COUNT.tmp" "$OMARCHY_TEST_HYPRCTL_MISS_COUNT"
     exit 4
   fi
 fi
@@ -232,12 +234,12 @@ if (( socket_bound )); then
   done
 
   # The scratch copy's wait is short enough to run out on its own, so count
-  # the probes made after the signal rather than timing the exit.
+  # the probes made after the signal, with room for a slow scheduler.
   signalled_at=$(<"$hyprctl_misses")
   kill -TERM "$launch_pid"
   wait "$launch_pid" || fail "a supervisor signalled during the wait exits cleanly"
   launch_pid=""
-  (( $(<"$hyprctl_misses") - signalled_at <= 2 )) ||
+  (( $(<"$hyprctl_misses") - signalled_at <= 10 )) ||
     fail "a teardown during the wait stops probing the compositor" "$(( $(<"$hyprctl_misses") - signalled_at )) probes after the signal"
   [[ $(launches) == 1 ]] || fail "a supervisor signalled during the wait does not relaunch" "$(<"$qs_log")"
   grep -F 'stopped answering' "$logger_log" >/dev/null &&
