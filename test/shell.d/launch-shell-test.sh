@@ -231,11 +231,14 @@ if (( socket_bound )); then
     sleep 0.05
   done
 
-  signalled=$SECONDS
+  # The scratch copy's wait is short enough to run out on its own, so count
+  # the probes made after the signal rather than timing the exit.
+  signalled_at=$(<"$hyprctl_misses")
   kill -TERM "$launch_pid"
   wait "$launch_pid" || fail "a supervisor signalled during the wait exits cleanly"
   launch_pid=""
-  (( SECONDS - signalled <= 2 )) || fail "a teardown during the wait ends supervision promptly" "took $(( SECONDS - signalled ))s"
+  (( $(<"$hyprctl_misses") - signalled_at <= 2 )) ||
+    fail "a teardown during the wait stops probing the compositor" "$(( $(<"$hyprctl_misses") - signalled_at )) probes after the signal"
   [[ $(launches) == 1 ]] || fail "a supervisor signalled during the wait does not relaunch" "$(<"$qs_log")"
   grep -F 'stopped answering' "$logger_log" >/dev/null &&
     fail "a teardown during the wait is not logged as a compositor that stopped answering" "$(<"$logger_log")"
